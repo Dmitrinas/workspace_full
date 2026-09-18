@@ -1,166 +1,205 @@
 import jsPDF from 'jspdf';
-import 'jspdf-autotable';
+import html2canvas from 'html2canvas';
 import { WorkOrder, Inspection, AcceptanceAct } from '../types';
 
-declare module 'jspdf' {
-  interface jsPDF {
-    autoTable: (options: any) => jsPDF;
-    lastAutoTable: { finalY: number };
-  }
+export async function generateWorkOrderPDF(order: WorkOrder): Promise<jsPDF> {
+  const container = document.createElement('div');
+  container.style.width = '800px';
+  container.style.padding = '40px';
+  container.style.fontFamily = 'Arial, sans-serif';
+  container.style.position = 'absolute';
+  container.style.left = '-9999px';
+  container.style.top = '0';
+  
+  const subtotal = order.items.reduce((s, i) => s + i.quantity * i.price, 0);
+  const discountAmt = order.discountType === 'percent' ? subtotal * order.discount / 100 : order.discount;
+  const total = subtotal - discountAmt;
+  
+  container.innerHTML = `
+    <h1 style="text-align:center;font-size:24px;margin-bottom:20px;">Заказ-наряд</h1>
+    <div style="margin-bottom:20px;">
+      <p><strong>Номер:</strong> ${order.number}</p>
+      <p><strong>Дата:</strong> ${new Date(order.createdAt).toLocaleDateString('ru-RU')}</p>
+      <p><strong>Статус:</strong> ${getStatusLabel(order.status)}</p>
+    </div>
+    <div style="margin-bottom:20px;">
+      <h3 style="margin-bottom:10px;">Информация о клиенте:</h3>
+      <p><strong>ФИО:</strong> ${order.clientName}</p>
+      <p><strong>Телефон:</strong> ${order.clientPhone}</p>
+      <p><strong>Email:</strong> ${order.clientEmail}</p>
+    </div>
+    <div style="margin-bottom:20px;">
+      <h3 style="margin-bottom:10px;">Информация об автомобиле:</h3>
+      <p><strong>Автомобиль:</strong> ${order.carBrand} ${order.carModel} (${order.carYear})</p>
+      <p><strong>Гос. номер:</strong> ${order.carPlate}</p>
+      ${order.vin ? `<p><strong>VIN:</strong> ${order.vin}</p>` : ''}
+      <p><strong>Пробег:</strong> ${order.mileage} км</p>
+    </div>
+    <table style="width:100%;border-collapse:collapse;margin-bottom:20px;">
+      <thead>
+        <tr style="background:#f0f0f0;">
+          <th style="padding:10px;border:1px solid #ddd;text-align:left;">Тип</th>
+          <th style="padding:10px;border:1px solid #ddd;text-align:left;">Наименование</th>
+          <th style="padding:10px;border:1px solid #ddd;text-align:right;">Кол-во</th>
+          <th style="padding:10px;border:1px solid #ddd;text-align:right;">Цена</th>
+          <th style="padding:10px;border:1px solid #ddd;text-align:right;">Сумма</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${order.items.map(item => `
+          <tr>
+            <td style="padding:10px;border:1px solid #ddd;">${item.type === 'work' ? 'Работа' : 'Запчасть'}</td>
+            <td style="padding:10px;border:1px solid #ddd;">${item.name}</td>
+            <td style="padding:10px;border:1px solid #ddd;text-align:right;">${item.quantity}</td>
+            <td style="padding:10px;border:1px solid #ddd;text-align:right;">${item.price.toFixed(2)} руб.</td>
+            <td style="padding:10px;border:1px solid #ddd;text-align:right;">${(item.quantity * item.price).toFixed(2)} руб.</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+    <div style="text-align:right;margin-bottom:20px;">
+      <p><strong>Подитог:</strong> ${subtotal.toFixed(2)} руб.</p>
+      ${order.discount > 0 ? `<p><strong>Скидка (${order.discount}${order.discountType === 'percent' ? '%' : ' руб.'}):</strong> -${discountAmt.toFixed(2)} руб.</p>` : ''}
+      <p style="font-size:18px;"><strong>ИТОГО:</strong> ${total.toFixed(2)} руб.</p>
+    </div>
+    ${order.notes ? `<div><strong>Примечания:</strong> ${order.notes}</div>` : ''}
+  `;
+  
+  document.body.appendChild(container);
+  
+  const canvas = await html2canvas(container, { scale: 2 });
+  const imgData = canvas.toDataURL('image/png');
+  
+  const pdf = new jsPDF('p', 'mm', 'a4');
+  const pdfWidth = pdf.internal.pageSize.getWidth();
+  const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+  
+  pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+  
+  document.body.removeChild(container);
+  
+  return pdf;
 }
 
-export function generateWorkOrderPDF(order: WorkOrder): jsPDF {
-  const doc = new jsPDF();
+export async function generateInspectionPDF(inspection: Inspection, order?: WorkOrder): Promise<jsPDF> {
+  const container = document.createElement('div');
+  container.style.width = '800px';
+  container.style.padding = '40px';
+  container.style.fontFamily = 'Arial, sans-serif';
+  container.style.position = 'absolute';
+  container.style.left = '-9999px';
+  container.style.top = '0';
   
-  doc.setFontSize(18);
-  doc.text('Заказ-наряд', 105, 20, { align: 'center' });
+  container.innerHTML = `
+    <h1 style="text-align:center;font-size:24px;margin-bottom:20px;">Акт осмотра</h1>
+    <div style="margin-bottom:20px;">
+      <p><strong>Дата осмотра:</strong> ${new Date(inspection.date).toLocaleDateString('ru-RU')}</p>
+      ${order ? `
+        <p><strong>Заказ-наряд:</strong> ${order.number}</p>
+        <p><strong>Клиент:</strong> ${order.clientName}</p>
+        <p><strong>Автомобиль:</strong> ${order.carBrand} ${order.carModel} (${order.carYear})</p>
+      ` : ''}
+    </div>
+    <div style="margin-bottom:20px;">
+      <p><strong>Пробег:</strong> ${inspection.mileage} км</p>
+      <p><strong>Состояние кузова:</strong> ${getConditionLabel(inspection.bodyCondition)}</p>
+      <p><strong>Уровень топлива:</strong> ${inspection.fuelLevel}%</p>
+    </div>
+    <div style="margin-bottom:20px;">
+      <h3 style="margin-bottom:10px;">Обнаруженные неисправности:</h3>
+      <p>${inspection.findings || 'Не обнаружены'}</p>
+    </div>
+    <div style="margin-bottom:20px;">
+      <h3 style="margin-bottom:10px;">Рекомендации:</h3>
+      <p>${inspection.recommendations || 'Нет'}</p>
+    </div>
+    <div>
+      <p><strong>Количество фото:</strong> ${inspection.photos.length}</p>
+    </div>
+  `;
   
-  doc.setFontSize(12);
-  doc.text(`Номер: ${order.number}`, 14, 35);
-  doc.text(`Дата: ${new Date(order.createdAt).toLocaleDateString('ru-RU')}`, 14, 42);
-  doc.text(`Статус: ${getStatusLabel(order.status)}`, 14, 49);
+  document.body.appendChild(container);
   
-  doc.setFontSize(11);
-  doc.text('Информация о клиенте:', 14, 62);
-  doc.text(`ФИО: ${order.clientName}`, 14, 70);
-  doc.text(`Телефон: ${order.clientPhone}`, 14, 77);
-  doc.text(`Email: ${order.clientEmail}`, 14, 84);
+  const canvas = await html2canvas(container, { scale: 2 });
+  const imgData = canvas.toDataURL('image/png');
   
-  doc.text('Информация об автомобиле:', 14, 97);
-  doc.text(`${order.carBrand} ${order.carModel} (${order.carYear})`, 14, 105);
-  doc.text(`Гос. номер: ${order.carPlate}`, 14, 112);
-  if (order.vin) doc.text(`VIN: ${order.vin}`, 14, 119);
+  const pdf = new jsPDF('p', 'mm', 'a4');
+  const pdfWidth = pdf.internal.pageSize.getWidth();
+  const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
   
-  const tableData = order.items.map(item => [
-    item.type === 'work' ? 'Работа' : 'Запчасть',
-    item.name,
-    String(item.quantity),
-    `${item.price.toFixed(2)} руб.`,
-    `${(item.quantity * item.price).toFixed(2)} руб.`,
-  ]);
+  pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
   
-  doc.autoTable({
-    startY: 130,
-    head: [['Тип', 'Наименование', 'Кол-во', 'Цена', 'Сумма']],
-    body: tableData,
-    theme: 'striped',
-    headStyles: { fillColor: [59, 130, 246] },
-  });
+  document.body.removeChild(container);
   
-  const subtotal = order.items.reduce((sum, item) => sum + item.quantity * item.price, 0);
-  let discountAmount = 0;
-  if (order.discountType === 'percent') {
-    discountAmount = subtotal * order.discount / 100;
-  } else {
-    discountAmount = order.discount;
-  }
-  const total = subtotal - discountAmount;
-  
-  const finalY = doc.lastAutoTable.finalY + 10;
-  doc.text(`Подитог: ${subtotal.toFixed(2)} руб.`, 140, finalY);
-  if (order.discount > 0) {
-    doc.text(`Скидка (${order.discount}${order.discountType === 'percent' ? '%' : ' руб.'}): -${discountAmount.toFixed(2)} руб.`, 140, finalY + 7);
-  }
-  doc.setFontSize(13);
-  doc.text(`ИТОГО: ${total.toFixed(2)} руб.`, 140, finalY + (order.discount > 0 ? 17 : 10));
-  
-  if (order.notes) {
-    doc.setFontSize(10);
-    doc.text(`Примечания: ${order.notes}`, 14, finalY + 30);
-  }
-  
-  return doc;
+  return pdf;
 }
 
-export function generateInspectionPDF(inspection: Inspection, order?: WorkOrder): jsPDF {
-  const doc = new jsPDF();
+export async function generateAcceptanceActPDF(act: AcceptanceAct, order?: WorkOrder): Promise<jsPDF> {
+  const container = document.createElement('div');
+  container.style.width = '800px';
+  container.style.padding = '40px';
+  container.style.fontFamily = 'Arial, sans-serif';
+  container.style.position = 'absolute';
+  container.style.left = '-9999px';
+  container.style.top = '0';
   
-  doc.setFontSize(18);
-  doc.text('Акт осмотра', 105, 20, { align: 'center' });
+  const subtotal = act.items.reduce((s, i) => s + i.quantity * i.price, 0);
+  const discountAmt = act.discountType === 'percent' ? subtotal * act.discount / 100 : act.discount;
+  const total = subtotal - discountAmt;
   
-  doc.setFontSize(12);
-  doc.text(`Дата осмотра: ${new Date(inspection.date).toLocaleDateString('ru-RU')}`, 14, 35);
-  if (order) {
-    doc.text(`Заказ-наряд: ${order.number}`, 14, 42);
-    doc.text(`Клиент: ${order.clientName}`, 14, 49);
-    doc.text(`Автомобиль: ${order.carBrand} ${order.carModel} (${order.carYear})`, 14, 56);
-  }
+  container.innerHTML = `
+    <h1 style="text-align:center;font-size:24px;margin-bottom:20px;">Акт приема-передачи</h1>
+    <div style="margin-bottom:20px;">
+      <p><strong>Дата:</strong> ${new Date(act.date).toLocaleDateString('ru-RU')}</p>
+      <p><strong>Клиент:</strong> ${act.clientName}</p>
+      <p><strong>Автомобиль:</strong> ${act.carInfo}</p>
+    </div>
+    <table style="width:100%;border-collapse:collapse;margin-bottom:20px;">
+      <thead>
+        <tr style="background:#f0f0f0;">
+          <th style="padding:10px;border:1px solid #ddd;text-align:left;">Наименование</th>
+          <th style="padding:10px;border:1px solid #ddd;text-align:right;">Кол-во</th>
+          <th style="padding:10px;border:1px solid #ddd;text-align:right;">Цена</th>
+          <th style="padding:10px;border:1px solid #ddd;text-align:right;">Сумма</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${act.items.map(item => `
+          <tr>
+            <td style="padding:10px;border:1px solid #ddd;">${item.name}</td>
+            <td style="padding:10px;border:1px solid #ddd;text-align:right;">${item.quantity}</td>
+            <td style="padding:10px;border:1px solid #ddd;text-align:right;">${item.price.toFixed(2)} руб.</td>
+            <td style="padding:10px;border:1px solid #ddd;text-align:right;">${(item.quantity * item.price).toFixed(2)} руб.</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+    <div style="text-align:right;margin-bottom:20px;">
+      <p><strong>Подитог:</strong> ${subtotal.toFixed(2)} руб.</p>
+      ${act.discount > 0 ? `<p><strong>Скидка:</strong> -${discountAmt.toFixed(2)} руб.</p>` : ''}
+      <p style="font-size:18px;"><strong>ИТОГО:</strong> ${total.toFixed(2)} руб.</p>
+    </div>
+    ${act.notes ? `<div style="margin-bottom:20px;"><strong>Примечания:</strong> ${act.notes}</div>` : ''}
+    <div style="margin-top:40px;display:flex;justify-content:space-between;">
+      <div>Подпись клиента: _________________</div>
+      <div>Подпись исполнителя: _________________</div>
+    </div>
+  `;
   
-  doc.text(`Пробег: ${inspection.mileage} км`, 14, 70);
-  doc.text(`Состояние кузова: ${inspection.bodyCondition}`, 14, 77);
-  doc.text(`Уровень топлива: ${inspection.fuelLevel}%`, 14, 84);
+  document.body.appendChild(container);
   
-  doc.setFontSize(11);
-  doc.text('Обнаруженные неисправности:', 14, 97);
-  doc.setFontSize(10);
-  const findingsLines = doc.splitTextToSize(inspection.findings || 'Не обнаружены', 180);
-  doc.text(findingsLines, 14, 105);
+  const canvas = await html2canvas(container, { scale: 2 });
+  const imgData = canvas.toDataURL('image/png');
   
-  doc.setFontSize(11);
-  doc.text('Рекомендации:', 14, 105 + findingsLines.length * 5 + 10);
-  doc.setFontSize(10);
-  const recLines = doc.splitTextToSize(inspection.recommendations || 'Нет', 180);
-  doc.text(recLines, 14, 105 + findingsLines.length * 5 + 18);
+  const pdf = new jsPDF('p', 'mm', 'a4');
+  const pdfWidth = pdf.internal.pageSize.getWidth();
+  const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
   
-  doc.setFontSize(9);
-  doc.text(`Количество фото: ${inspection.photos.length}`, 14, 250);
+  pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
   
-  return doc;
-}
-
-export function generateAcceptanceActPDF(act: AcceptanceAct, order?: WorkOrder): jsPDF {
-  const doc = new jsPDF();
+  document.body.removeChild(container);
   
-  doc.setFontSize(18);
-  doc.text('Акт приема-передачи', 105, 20, { align: 'center' });
-  
-  doc.setFontSize(12);
-  doc.text(`Дата: ${new Date(act.date).toLocaleDateString('ru-RU')}`, 14, 35);
-  doc.text(`Клиент: ${act.clientName}`, 14, 42);
-  doc.text(`Автомобиль: ${act.carInfo}`, 14, 49);
-  
-  const tableData = act.items.map(item => [
-    item.name,
-    String(item.quantity),
-    `${item.price.toFixed(2)} руб.`,
-    `${(item.quantity * item.price).toFixed(2)} руб.`,
-  ]);
-  
-  doc.autoTable({
-    startY: 60,
-    head: [['Наименование', 'Кол-во', 'Цена', 'Сумма']],
-    body: tableData,
-    theme: 'striped',
-    headStyles: { fillColor: [59, 130, 246] },
-  });
-  
-  const subtotal = act.items.reduce((sum, item) => sum + item.quantity * item.price, 0);
-  let discountAmount = 0;
-  if (act.discountType === 'percent') {
-    discountAmount = subtotal * act.discount / 100;
-  } else {
-    discountAmount = act.discount;
-  }
-  const total = subtotal - discountAmount;
-  
-  const finalY = doc.lastAutoTable.finalY + 10;
-  doc.text(`Подитог: ${subtotal.toFixed(2)} руб.`, 140, finalY);
-  if (act.discount > 0) {
-    doc.text(`Скидка: -${discountAmount.toFixed(2)} руб.`, 140, finalY + 7);
-  }
-  doc.setFontSize(13);
-  doc.text(`ИТОГО: ${total.toFixed(2)} руб.`, 140, finalY + (act.discount > 0 ? 17 : 10));
-  
-  if (act.notes) {
-    doc.setFontSize(10);
-    doc.text(`Примечания: ${act.notes}`, 14, finalY + 30);
-  }
-  
-  doc.setFontSize(10);
-  doc.text('Подпись клиента: _________________', 14, 250);
-  doc.text('Подпись исполнителя: _________________', 120, 250);
-  
-  return doc;
+  return pdf;
 }
 
 function getStatusLabel(status: string): string {
@@ -171,4 +210,14 @@ function getStatusLabel(status: string): string {
     cancelled: 'Отменен',
   };
   return labels[status] || status;
+}
+
+function getConditionLabel(condition: string): string {
+  const labels: Record<string, string> = {
+    excellent: 'Отличное',
+    good: 'Хорошее',
+    fair: 'Удовлетворительное',
+    poor: 'Плохое',
+  };
+  return labels[condition] || condition;
 }

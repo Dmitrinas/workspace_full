@@ -18,9 +18,21 @@ export interface SparePart {
   updatedAt: string;
 }
 
+export interface WorkItem {
+  id: string;
+  name: string;
+  category: string;
+  price: number;
+  duration: number; // minutes
+  description?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface WorkOrder {
   id: string;
   number: string;
+  clientId: string;
   clientName: string;
   clientPhone: string;
   clientEmail: string;
@@ -29,6 +41,7 @@ export interface WorkOrder {
   carYear: string;
   carPlate: string;
   vin?: string;
+  mileage: number;
   items: WorkOrderItem[];
   discount: number;
   discountType: 'percent' | 'fixed';
@@ -39,6 +52,7 @@ export interface WorkOrder {
   notes: string;
   createdAt: string;
   updatedAt: string;
+  closedAt?: string;
   createdBy: string;
 }
 
@@ -49,6 +63,7 @@ export interface WorkOrderItem {
   quantity: number;
   price: number;
   sparePartId?: string;
+  workItemId?: string;
 }
 
 export interface Inspection {
@@ -69,7 +84,7 @@ export interface Inspection {
 
 export interface InspectionPhoto {
   id: string;
-  data: string; // base64
+  imageData: string; // base64
   description: string;
   timestamp: string;
 }
@@ -98,11 +113,34 @@ export interface AcceptanceActItem {
   price: number;
 }
 
+export interface Client {
+  id: string;
+  name: string;
+  phone: string;
+  email: string;
+  cars: ClientCar[];
+  notes: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ClientCar {
+  id: string;
+  brand: string;
+  model: string;
+  year: string;
+  plate: string;
+  vin?: string;
+  mileage: number;
+}
+
 export interface AppData {
   users: User[];
   spareParts: SparePart[];
+  workItems: WorkItem[];
   workOrders: WorkOrder[];
   inspections: Inspection[];
   acceptanceActs: AcceptanceAct[];
+  clients: Client[];
   currentUserId: string | null;
 }
